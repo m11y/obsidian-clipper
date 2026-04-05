@@ -8,6 +8,7 @@ import { createMarkdownContent } from 'defuddle/full';
 import { flattenShadowDom } from './utils/flatten-shadow-dom';
 import { saveFile } from './utils/file-utils';
 import { resolvePageMetadata } from './utils/page-metadata';
+import { enhanceWeiboContentHtml } from './utils/weibo-content';
 
 declare global {
 	interface Window {
@@ -153,6 +154,52 @@ declare global {
 		};
 	}
 
+	async function downloadWeiboAssets(urls: string[]) {
+		const assets = [];
+		for (let index = 0; index < urls.length; index += 1) {
+			const url = urls[index];
+			try {
+				const response = await fetch(url, { credentials: 'include' });
+				if (!response.ok) continue;
+				const blob = await response.blob();
+				const base64 = await blobToBase64(blob);
+				assets.push({
+					url,
+					filename: inferAssetFilename(url, index, blob.type || response.headers.get('content-type') || 'application/octet-stream'),
+					mimeType: blob.type || response.headers.get('content-type') || 'application/octet-stream',
+					base64,
+				});
+			} catch (error) {
+				console.error('[Obsidian Clipper] Failed to download Weibo asset', url, error);
+			}
+		}
+		return assets;
+	}
+
+	function blobToBase64(blob: Blob): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onloadend = () => {
+				const result = typeof reader.result === 'string' ? reader.result : '';
+				resolve(result.includes(',') ? result.split(',')[1] : result);
+			};
+			reader.onerror = () => reject(reader.error || new Error('Failed to encode blob'));
+			reader.readAsDataURL(blob);
+		});
+	}
+
+	function inferAssetFilename(url: string, index: number, mimeType: string): string {
+		try {
+			const pathname = new URL(url).pathname;
+			const name = pathname.split('/').pop() || '';
+			if (name && /\.[a-z0-9]+$/i.test(name)) {
+				return name;
+			}
+		} catch {}
+		const ext = mimeType.includes('png') ? 'png' : mimeType.includes('gif') ? 'gif' : mimeType.includes('webp') ? 'webp' : 'jpg';
+		return `weibo-${index + 1}.${ext}`;
+	}
+
 	// Firefox
 	browser.runtime.sendMessage({ action: "contentScriptLoaded" });
 
@@ -225,9 +272,10 @@ declare global {
 				try {
 					// Extract page content using Defuddle
 					const defuddled = new Defuddle(document, { url: document.URL }).parse();
+					const enhancedContentHtml = enhanceWeiboContentHtml(defuddled.content, document, document.URL);
 
 					// Convert HTML content to markdown
-					const markdown = createMarkdownContent(defuddled.content, document.URL);
+					const markdown = createMarkdownContent(enhancedContentHtml, document.URL);
 
 					// Copy to clipboard
 					const textArea = document.createElement("textarea");
@@ -250,7 +298,8 @@ declare global {
 			flattenShadowDom(document).then(async () => {
 				try {
 					const defuddled = new Defuddle(document, { url: document.URL }).parse();
-					const markdown = createMarkdownContent(defuddled.content, document.URL);
+					const enhancedContentHtml = enhanceWeiboContentHtml(defuddled.content, document, document.URL);
+					const markdown = createMarkdownContent(enhancedContentHtml, document.URL);
 					const title = defuddled.title || document.title || 'Untitled';
 					const fileName = title.replace(/[/\\?%*:|"<>]/g, '-');
 					await saveFile({
@@ -290,13 +339,14 @@ declare global {
 				);
 				const defuddled = await Promise.race([defuddle.parseAsync(), parseTimeout])
 					.catch(() => defuddle.parse());
+				const enhancedContentHtml = enhanceWeiboContentHtml(defuddled.content, document, document.URL);
 				const resolvedMetadata = resolvePageMetadata({
 					url: document.URL,
 					document,
 					title: defuddled.title,
 					author: defuddled.author,
 					published: defuddled.published,
-					contentHtml: defuddled.content,
+					contentHtml: enhancedContentHtml,
 					metaTags: defuddled.metaTags,
 				});
 				const extractedContent: { [key: string]: string } = {
@@ -348,7 +398,7 @@ declare global {
 				const response: ContentResponse = {
 					author: resolvedMetadata.author,
 					authorUrl: resolvedMetadata.authorUrl,
-					content: defuddled.content,
+					content: enhancedContentHtml,
 					description: defuddled.description,
 					domain: getDomain(document.URL),
 					extractedContent: extractedContent,
@@ -371,6 +421,11 @@ declare global {
 				console.error('[Obsidian Clipper] getPageContent error:', error);
 				sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) });
 			});
+			return true;
+		} else if (request.action === "downloadWeiboAssets") {
+			downloadWeiboAssets(request.urls || [])
+				.then(assets => sendResponse({ success: true, assets }))
+				.catch((error: unknown) => sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) }));
 			return true;
 		} else if (request.action === "extractContent") {
 			const content = extractContentBySelector(request.selector, request.attribute, request.extractHtml);

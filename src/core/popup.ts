@@ -23,6 +23,7 @@ import { sanitizeFileName } from '../utils/string-utils';
 import { saveFile } from '../utils/file-utils';
 import { translatePage, getMessage, setupLanguageAndDirection } from '../utils/i18n';
 import { formatPropertyValue } from '../utils/shared';
+import { trySaveWeiboClipViaLocalBridge } from '../utils/local-clip-bridge';
 
 interface ReaderModeResponse {
 	success: boolean;
@@ -1274,7 +1275,25 @@ async function handleClipObsidian(): Promise<void> {
 		const noteName = isDailyNote ? '' : noteNameField?.value || '';
 		const path = isDailyNote ? '' : pathField?.value || '';
 
-		await saveToObsidian(fileContent, noteName, path, selectedVault, currentTemplate.behavior);
+		const currentUrl = currentVariables['{{url}}'] || '';
+		const usedLocalBridge = currentTabId
+			? await trySaveWeiboClipViaLocalBridge({
+				tabId: currentTabId,
+				pageUrl: currentUrl,
+				fileContent,
+				noteName,
+				path,
+				vault: selectedVault,
+				behavior: currentTemplate.behavior,
+			}).catch(error => {
+				console.warn('Local Weibo bridge failed, falling back to default Obsidian save:', error);
+				return false;
+			})
+			: false;
+
+		if (!usedLocalBridge) {
+			await saveToObsidian(fileContent, noteName, path, selectedVault, currentTemplate.behavior);
+		}
 		const tabInfo = await getCurrentTabInfo();
 		await incrementStat('addToObsidian', selectedVault, path, tabInfo.url, tabInfo.title);
 
