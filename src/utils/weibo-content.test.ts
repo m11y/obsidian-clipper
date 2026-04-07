@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { parseHTML } from 'linkedom';
-import { enhanceWeiboContentHtml } from './weibo-content';
+import { enhanceWeiboContentHtml, getDefuddleOptions } from './weibo-content';
 
 describe('enhanceWeiboContentHtml', () => {
 	test('appends missing weibo content images from scripts', () => {
@@ -129,5 +129,71 @@ describe('enhanceWeiboContentHtml', () => {
 
 		expect(result).toContain('https://wx2.sinaimg.cn/large/00002907gy1ia93a6k08kj20wr0zagrl.jpg');
 		expect(result).not.toContain('timeline_card_small_photo_default.png');
+	});
+
+	test('replaces quoted tweet content with a placeholder linking back to the original x post', () => {
+		const { document } = parseHTML(`
+			<html>
+				<body>
+					<article data-testid="tweet">
+						<p>tweet body</p>
+					</article>
+				</body>
+			</html>
+		`);
+
+		const result = enhanceWeiboContentHtml(
+			'<div class="tweet"><div class="tweet-text"><p>tweet body</p></div><blockquote class="quoted-tweet"><div class="tweet-text"><p>quoted body that should not be expanded inline</p></div></blockquote></div>',
+			document as unknown as Document,
+			'https://x.com/demo/status/1'
+		);
+
+		expect(result).toContain('tweet body');
+		expect(result).toContain('引用内容未展开：quoted body that should not be expanded inline');
+		expect(result).toContain('href="https://x.com/demo/status/1"');
+		expect(result).not.toContain('quoted-tweet');
+	});
+
+	test('only appends images from the main x tweet, not replies', () => {
+		const { document } = parseHTML(`
+			<html>
+				<body>
+					<section aria-label="对话">
+						<article data-testid="tweet">
+							<p>main tweet</p>
+							<img src="https://pbs.twimg.com/media/MainImage.jpg?format=jpg&name=small" alt="main image" />
+						</article>
+						<article data-testid="tweet">
+							<p>reply tweet</p>
+							<img src="https://pbs.twimg.com/media/ReplyImage.jpg?format=jpg&name=small" alt="reply image" />
+						</article>
+					</section>
+				</body>
+			</html>
+		`);
+
+		const result = enhanceWeiboContentHtml(
+			'<p>main tweet</p>',
+			document as unknown as Document,
+			'https://x.com/demo/status/1'
+		);
+
+		expect(result).toContain('https://pbs.twimg.com/media/MainImage.jpg?format=jpg&amp;name=small');
+		expect(result).not.toContain('ReplyImage.jpg');
+	});
+});
+
+describe('getDefuddleOptions', () => {
+	test('disables replies for x status pages', () => {
+		expect(getDefuddleOptions('https://x.com/demo/status/1')).toEqual({
+			url: 'https://x.com/demo/status/1',
+			includeReplies: false,
+		});
+	});
+
+	test('keeps default options for non-status x pages', () => {
+		expect(getDefuddleOptions('https://x.com/demo/article/1')).toEqual({
+			url: 'https://x.com/demo/article/1',
+		});
 	});
 });

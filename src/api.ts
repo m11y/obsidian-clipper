@@ -10,6 +10,7 @@ import { applyFilters } from './utils/filters';
 import { buildVariables, generateFrontmatter, extractContentBySelector, selectorContentToString, formatPropertyValue } from './utils/shared';
 import { resolvePageMetadata } from './utils/page-metadata';
 import { sanitizeFileName } from './utils/string-utils';
+import { enhanceWeiboContentHtml, getDefuddleOptions } from './utils/weibo-content';
 import { Template, Property } from './types/types';
 
 // ---------------------------------------------------------------------------
@@ -183,20 +184,21 @@ export async function clip(options: ClipOptions): Promise<ClipResult> {
 
 	// Extract content with defuddle
 	// Cast through unknown: linkedom's Document is structurally compatible but not nominally typed as DOM Document
-	const defuddle = new DefuddleClass(documentElement as unknown as Document, { url });
+	const defuddle = new DefuddleClass(documentElement as unknown as Document, getDefuddleOptions(url));
 	const defuddleResult = defuddle.parse();
+	const contentHtml = enhanceWeiboContentHtml(defuddleResult.content, doc as unknown as Document, url);
 	const resolvedMetadata = resolvePageMetadata({
 		url,
 		document: doc as unknown as Document,
 		title: defuddleResult.title,
 		author: defuddleResult.author,
 		published: defuddleResult.published,
-		contentHtml: defuddleResult.content,
+		contentHtml,
 		metaTags: defuddleResult.metaTags,
 	});
 
 	// Convert to markdown
-	const markdownContent = createMarkdownContent(defuddleResult.content, url);
+	const markdownContent = createMarkdownContent(contentHtml, url);
 
 	// Build template variables
 	const variables = buildVariables({
@@ -204,7 +206,7 @@ export async function clip(options: ClipOptions): Promise<ClipResult> {
 		author: resolvedMetadata.author,
 		authorUrl: resolvedMetadata.authorUrl,
 		content: markdownContent,
-		contentHtml: defuddleResult.content,
+		contentHtml,
 		url,
 		fullHtml: html,
 		description: defuddleResult.description,

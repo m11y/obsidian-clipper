@@ -7,7 +7,10 @@ export function enhanceWeiboContentHtml(
 		return contentHtml;
 	}
 
-	const existingUrls = extractImageUrlsFromHtml(contentHtml, pageUrl);
+	const sanitizedContentHtml = isTwitterStatusUrl(pageUrl)
+		? stripTwitterQuotedContent(contentHtml, pageUrl)
+		: contentHtml;
+	const existingUrls = extractImageUrlsFromHtml(sanitizedContentHtml, pageUrl);
 	const sourceUrls = isWeiboUrl(pageUrl)
 		? extractWeiboImageUrls(document, pageUrl)
 		: isTwitterUrl(pageUrl)
@@ -16,14 +19,20 @@ export function enhanceWeiboContentHtml(
 	const candidateUrls = sourceUrls.filter(url => !existingUrls.has(url));
 
 	if (candidateUrls.length === 0) {
-		return contentHtml;
+		return sanitizedContentHtml;
 	}
 
 	const imageHtml = candidateUrls
 		.map(url => `<p><img src="${escapeHtml(url)}" /></p>`)
 		.join('');
 
-	return `${contentHtml}${contentHtml.trim() ? '\n' : ''}${imageHtml}`;
+	return `${sanitizedContentHtml}${sanitizedContentHtml.trim() ? '\n' : ''}${imageHtml}`;
+}
+
+export function getDefuddleOptions(pageUrl: string): { url: string; includeReplies?: boolean } {
+	return isTwitterStatusUrl(pageUrl)
+		? { url: pageUrl, includeReplies: false }
+		: { url: pageUrl };
 }
 
 function extractWeiboImageUrls(document: Document, pageUrl: string): string[] {
@@ -37,9 +46,12 @@ function extractWeiboImageUrls(document: Document, pageUrl: string): string[] {
 }
 
 function extractTwitterImageUrls(document: Document, pageUrl: string): string[] {
+	const root = getTwitterImageRoot(document, pageUrl);
 	const urls = [
-		...extractTwitterImageUrlsFromDom(document, pageUrl),
-		...extractTwitterImageUrlsFromScripts(document, pageUrl),
+		...extractTwitterImageUrlsFromDom(root, pageUrl),
+		...(shouldExtractTwitterImagesFromScripts(document, pageUrl)
+			? extractTwitterImageUrlsFromScripts(document, pageUrl)
+			: []),
 	];
 
 	return Array.from(new Set(urls));
@@ -95,8 +107,8 @@ function extractWeiboImageUrlsFromScripts(document: Document, pageUrl: string): 
 	return urls;
 }
 
-function extractTwitterImageUrlsFromDom(document: Document, pageUrl: string): string[] {
-	const images = Array.from(document.querySelectorAll('img'));
+function extractTwitterImageUrlsFromDom(root: ParentNode, pageUrl: string): string[] {
+	const images = Array.from(root.querySelectorAll('img'));
 	const urls: string[] = [];
 
 	for (const image of images) {
@@ -115,6 +127,27 @@ function extractTwitterImageUrlsFromDom(document: Document, pageUrl: string): st
 	}
 
 	return urls;
+}
+
+function getTwitterImageRoot(document: Document, pageUrl: string): ParentNode {
+	if (!isTwitterStatusUrl(pageUrl)) {
+		return document;
+	}
+
+	const timeline = document.querySelector('[aria-label="Timeline: Conversation"], section[aria-label="对话"]');
+	const mainTweet = timeline?.querySelector('article[data-testid="tweet"]')
+		|| document.querySelector('main article[data-testid="tweet"]')
+		|| document.querySelector('article[data-testid="tweet"]');
+
+	return mainTweet || document;
+}
+
+function shouldExtractTwitterImagesFromScripts(document: Document, pageUrl: string): boolean {
+	if (!isTwitterStatusUrl(pageUrl)) {
+		return true;
+	}
+
+	return document.querySelectorAll('article[data-testid="tweet"]').length <= 1;
 }
 
 function extractTwitterImageUrlsFromScripts(document: Document, pageUrl: string): string[] {
@@ -295,6 +328,62 @@ function isTwitterUrl(url: string): boolean {
 	} catch {
 		return false;
 	}
+}
+
+function isTwitterStatusUrl(url: string): boolean {
+	try {
+		const parsed = new URL(url);
+		return isTwitterUrl(url) && /^\/(?:(?:i(?:\/web)?|[^/]+)\/status\/\d+)/i.test(parsed.pathname);
+	} catch {
+		return false;
+	}
+}
+
+function stripTwitterQuotedContent(contentHtml: string, pageUrl: string): string {
+	if (!contentHtml.includes('quoted-tweet')) {
+		return contentHtml;
+	}
+
+	return contentHtml
+		.replace(
+			/<blockquote\b[^>]*class=["'][^"']*\bquoted-tweet\b[^"']*["'][^>]*>[\s\S]*?<\/blockquote>/gi,
+			match => buildTwitterQuotedContentPlaceholder(match, pageUrl)
+		)
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+}
+
+function buildTwitterQuotedContentPlaceholder(quotedHtml: string, pageUrl: string): string {
+	const label = extractTwitterQuotedContentLabel(quotedHtml);
+	const message = label
+		? `引用内容未展开：${label}`
+		: '引用内容未展开';
+
+	return `<p><em>${escapeHtml(message)}，请返回 <a href="${escapeHtml(pageUrl)}">原始 X 帖子</a> 查看。</em></p>`;
+}
+
+function extractTwitterQuotedContentLabel(quotedHtml: string): string {
+	const text = quotedHtml
+		.replace(/<(br|\/p|\/div|\/li|\/h[1-6])\b[^>]*>/gi, '\n')
+		.replace(/<[^>]+>/g, ' ')
+		.replace(/&nbsp;/gi, ' ')
+		.replace(/&amp;/gi, '&')
+		.split('\n')
+		.map(line => line.replace(/\s+/g, ' ').trim())
+		.filter(Boolean);
+
+	return text.find(line => {
+		if (line === '引用') {
+			return false;
+		}
+		if (/^@\w+/.test(line)) {
+			return false;
+		}
+		if (/^\d{4}-\d{2}-\d{2}$/.test(line)) {
+			return false;
+		}
+		return line.length >= 8;
+	}) || '';
 }
 
 function escapeHtml(value: string): string {

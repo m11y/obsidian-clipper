@@ -8,7 +8,7 @@ import { createMarkdownContent } from 'defuddle/full';
 import { flattenShadowDom } from './utils/flatten-shadow-dom';
 import { saveFile } from './utils/file-utils';
 import { resolvePageMetadata } from './utils/page-metadata';
-import { enhanceWeiboContentHtml } from './utils/weibo-content';
+import { enhanceWeiboContentHtml, getDefuddleOptions } from './utils/weibo-content';
 
 declare global {
 	interface Window {
@@ -271,7 +271,7 @@ declare global {
 			flattenShadowDom(document).then(() => {
 				try {
 					// Extract page content using Defuddle
-					const defuddled = new Defuddle(document, { url: document.URL }).parse();
+					const defuddled = new Defuddle(document, getDefuddleOptions(document.URL)).parse();
 					const enhancedContentHtml = enhanceWeiboContentHtml(defuddled.content, document, document.URL);
 
 					// Convert HTML content to markdown
@@ -297,7 +297,7 @@ declare global {
 		if (request.action === "saveMarkdownToFile") {
 			flattenShadowDom(document).then(async () => {
 				try {
-					const defuddled = new Defuddle(document, { url: document.URL }).parse();
+					const defuddled = new Defuddle(document, getDefuddleOptions(document.URL)).parse();
 					const enhancedContentHtml = enhanceWeiboContentHtml(defuddled.content, document, document.URL);
 					const markdown = createMarkdownContent(enhancedContentHtml, document.URL);
 					const title = defuddled.title || document.title || 'Untitled';
@@ -333,7 +333,7 @@ declare global {
 
 				// Use parseAsync to ensure async variables like {{transcript}} are available.
 				// If it hangs (e.g. another extension has corrupted fetch), fall back to sync parse.
-				const defuddle = new Defuddle(document, { url: document.URL });
+				const defuddle = new Defuddle(document, getDefuddleOptions(document.URL));
 				const parseTimeout = new Promise<never>((_, reject) =>
 					setTimeout(() => reject(new Error('parseAsync timeout')), 8000)
 				);

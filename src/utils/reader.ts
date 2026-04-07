@@ -10,6 +10,7 @@ import { copyToClipboard } from './clipboard-utils';
 import { getMessage, initializeI18n } from './i18n';
 import { getFontCss } from './font-utils';
 import { resolvePageMetadata } from './page-metadata';
+import { enhanceWeiboContentHtml, getDefuddleOptions } from './weibo-content';
 
 // Mobile viewport settings
 const VIEWPORT = 'width=device-width, initial-scale=1, maximum-scale=1';
@@ -693,20 +694,21 @@ export class Reader {
 		extractorType?: string;
 	}> {
 
-		const defuddle = new Defuddle(doc, { url: doc.URL });
+		const defuddle = new Defuddle(doc, getDefuddleOptions(doc.URL));
 		const defuddled = await defuddle.parseAsync();
+		const contentHtml = enhanceWeiboContentHtml(defuddled.content, doc, doc.URL);
 		const resolvedMetadata = resolvePageMetadata({
 			url: doc.URL,
 			document: doc,
 			title: defuddled.title,
 			author: defuddled.author,
 			published: defuddled.published,
-			contentHtml: defuddled.content,
+			contentHtml,
 			metaTags: defuddled.metaTags,
 		});
 
 		return {
-			content: defuddled.content,
+			content: contentHtml,
 			title: resolvedMetadata.title,
 			author: resolvedMetadata.author,
 			published: resolvedMetadata.published,
