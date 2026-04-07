@@ -151,7 +151,7 @@ function extractWeiboTitleFromContentHtml(contentHtml: string | undefined): stri
 		return '';
 	}
 
-	return firstLine.length > 50 ? firstLine.slice(0, 50) : firstLine;
+	return truncateWeiboFallbackTitle(firstLine);
 }
 
 function extractWeiboPublished(document: Document | undefined, pageUrl: string, metaTags: MetaTag[] | undefined): string {
@@ -564,4 +564,26 @@ function normalizeWeiboPublished(value: string | null | undefined): string {
 	}
 
 	return '';
+}
+
+function truncateWeiboFallbackTitle(value: string): string {
+	if (!value) {
+		return '';
+	}
+
+	if (containsCjk(value)) {
+		return value.length > 30 ? value.slice(0, 30) : value;
+	}
+
+	if (value.length <= 60) {
+		return value;
+	}
+
+	const truncated = value.slice(0, 60);
+	const wordSafe = truncated.replace(/\s+\S*$/, '').trim();
+	return wordSafe.length >= 20 ? wordSafe : truncated.trim();
+}
+
+function containsCjk(value: string): boolean {
+	return /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(value);
 }

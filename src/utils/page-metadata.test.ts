@@ -109,7 +109,7 @@ describe('resolvePageMetadata', () => {
 		});
 
 		expect(metadata).toEqual({
-			title: '这是微博正文的第一行，而且确实比三十个字符更长一些用来验证截断规则。',
+			title: '这是微博正文的第一行，而且确实比三十个字符更长一些用来验证截',
 			author: '',
 			authorUrl: '',
 			published: '',
@@ -157,5 +157,23 @@ describe('resolvePageMetadata', () => {
 		});
 
 		expect(metadata.published).toBe('2026-04-04 09:15');
+	});
+
+	test('truncates english fallback title at a word boundary up to 60 chars', () => {
+		const { document } = parseHTML(`
+			<html>
+				<head><title>微博正文 - 微博</title></head>
+				<body></body>
+			</html>
+		`);
+
+		const metadata = resolvePageMetadata({
+			url: 'https://weibo.com/1234567890/AbCdEf',
+			document: document as unknown as Document,
+			title: '微博正文 - 微博',
+			contentHtml: '<p>This fallback title should keep whole words and avoid chopping the last visible token awkwardly in the middle.</p>',
+		});
+
+		expect(metadata.title).toBe('This fallback title should keep whole words and avoid');
 	});
 });
