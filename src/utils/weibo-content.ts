@@ -27,12 +27,13 @@ export function enhanceWeiboContentHtml(
 }
 
 function extractWeiboImageUrls(document: Document, pageUrl: string): string[] {
-	const urls = [
-		...extractWeiboImageUrlsFromDom(document, pageUrl),
-		...extractWeiboImageUrlsFromScripts(document, pageUrl),
-	];
+	const domUrls = extractWeiboImageUrlsFromDom(document, pageUrl);
+	if (domUrls.length > 0) {
+		return Array.from(new Set(domUrls));
+	}
 
-	return Array.from(new Set(urls));
+	const scriptUrls = extractWeiboImageUrlsFromScripts(document, pageUrl);
+	return Array.from(new Set(scriptUrls));
 }
 
 function extractTwitterImageUrls(document: Document, pageUrl: string): string[] {
@@ -60,6 +61,14 @@ function extractWeiboImageUrlsFromDom(document: Document, pageUrl: string): stri
 			if (normalized && isLikelyWeiboContentImage(normalized, image)) {
 				urls.push(normalized);
 			}
+		}
+	}
+
+	const imageLinks = Array.from(document.querySelectorAll('a[href]'));
+	for (const link of imageLinks) {
+		const href = normalizeUrl(link.getAttribute('href') || '', pageUrl);
+		if (href && isLikelyWeiboContentImageLink(href, link)) {
+			urls.push(href);
 		}
 	}
 
@@ -204,6 +213,32 @@ function isLikelyWeiboContentImage(url: string, element?: Element): boolean {
 		}
 
 		return !!element?.closest('article, main, [role="main"], [class*="detail"], [class*="content"], [class*="feed"]');
+	} catch {
+		return false;
+	}
+}
+
+function isLikelyWeiboContentImageLink(url: string, element?: Element): boolean {
+	try {
+		const parsed = new URL(url);
+		if (!/(^|\.)sinaimg\.cn$/i.test(parsed.hostname)) {
+			return false;
+		}
+
+		if (!/\.(jpg|jpeg|png|gif|webp)(?:[?#].*)?$/i.test(parsed.pathname)) {
+			return false;
+		}
+
+		const classText = [
+			element?.getAttribute('class') || '',
+			element?.parentElement?.getAttribute('class') || '',
+			element?.closest('[class]')?.getAttribute('class') || '',
+		].join(' ').toLowerCase();
+		if (/(avatar|profile|head|icon|emoji|logo|verify|player|cover|mask)/i.test(classText)) {
+			return false;
+		}
+
+		return !!element?.closest('article, main, [role="main"], [class*="detail"], [class*="content"], [class*="feed"], [class*="wbtext"]');
 	} catch {
 		return false;
 	}
