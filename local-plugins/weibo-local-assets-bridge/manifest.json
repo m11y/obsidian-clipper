@@ -1,0 +1,9 @@
+{
+  "id": "weibo-local-assets-bridge",
+  "name": "Weibo Local Assets Bridge",
+  "version": "0.0.1",
+  "minAppVersion": "1.5.0",
+  "description": "Receives Weibo clips from Obsidian Web Clipper and stores images as local attachments.",
+  "author": "Junwei + Codex",
+  "isDesktopOnly": true
+}
