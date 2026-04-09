@@ -25,7 +25,7 @@ export async function trySaveWeiboClipViaLocalBridge(payload: SaveClipPayload): 
 		return false;
 	}
 
-	const imageUrls = extractMarkdownImageUrls(payload.fileContent);
+	const imageUrls = extractMarkdownAssetUrls(payload.fileContent);
 
 	const response = await browser.tabs.sendMessage(payload.tabId, {
 		action: 'downloadWeiboAssets',
@@ -58,17 +58,36 @@ export async function trySaveWeiboClipViaLocalBridge(payload: SaveClipPayload): 
 	return true;
 }
 
-function extractMarkdownImageUrls(markdown: string): string[] {
+export function extractMarkdownAssetUrls(markdown: string): string[] {
 	const urls = new Set<string>();
 
 	for (const match of markdown.matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)) {
 		urls.add(match[1]);
 	}
 
+	for (const match of markdown.matchAll(/\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)) {
+		if (isDirectImageUrl(match[1])) {
+			urls.add(match[1]);
+		}
+	}
+
 	for (const match of markdown.matchAll(/<img[^>]+src=["'](https?:\/\/[^"']+)/gi)) {
 		urls.add(match[1]);
+	}
+
+	for (const match of markdown.matchAll(/<a[^>]+href=["'](https?:\/\/[^"']+)["'][^>]*>/gi)) {
+		if (isDirectImageUrl(match[1])) {
+			urls.add(match[1]);
+		}
 	}
 
 	return Array.from(urls);
 }
 
+function isDirectImageUrl(url: string): boolean {
+	try {
+		return /\.(jpg|jpeg|png|gif|webp)(?:[?#].*)?$/i.test(new URL(url).pathname);
+	} catch {
+		return false;
+	}
+}

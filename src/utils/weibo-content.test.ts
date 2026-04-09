@@ -131,6 +131,61 @@ describe('enhanceWeiboContentHtml', () => {
 		expect(result).not.toContain('timeline_card_small_photo_default.png');
 	});
 
+	test('does not append an inline image when the weibo content already links to it', () => {
+		const { document } = parseHTML(`
+			<html>
+				<body>
+					<article>
+						<div class="_wbtext_q1l14_14">
+							如果不理解最近技术文章说的 agent loop 是什么效果
+							<a target="_blank" data-pid="00002907gy1ia93a6k08kj20wr0zagrl" href="https://wx2.sinaimg.cn/large/00002907gy1ia93a6k08kj20wr0zagrl.jpg">查看图片</a>
+						</div>
+					</article>
+				</body>
+			</html>
+		`);
+
+		const result = enhanceWeiboContentHtml(
+			'<p>如果不理解最近技术文章说的 agent loop 是什么效果 <a href="https://wx2.sinaimg.cn/large/00002907gy1ia93a6k08kj20wr0zagrl.jpg">查看图片</a></p>',
+			document as unknown as Document,
+			'https://weibo.com/10503/QrENs9Cxp'
+		);
+
+		expect(result).toContain('<a href="https://wx2.sinaimg.cn/large/00002907gy1ia93a6k08kj20wr0zagrl.jpg">查看图片</a>');
+		expect(result).not.toContain('<img src="https://wx2.sinaimg.cn/large/00002907gy1ia93a6k08kj20wr0zagrl.jpg"');
+	});
+
+	test('removes weibo visibility labels and repost tail blocks after the source timestamp', () => {
+		const { document } = parseHTML(`
+			<html>
+				<body>
+					<article>
+						<p>公开</p>
+						<p>如果不理解最近技术文章说的 agent loop 是什么效果</p>
+						<p><a href="https://weibo.com/10503/QrDcN49nA">26-2-13 13:41</a></p>
+						<p><img src="https://wx2.sinaimg.cn/mw690/00002907gy1i3ujuvyz4zj20u00u0q8p.jpg" /></p>
+					</article>
+				</body>
+			</html>
+		`);
+
+		const result = enhanceWeiboContentHtml(
+			[
+				'<p>公开</p>',
+				'<p>如果不理解最近技术文章说的 agent loop 是什么效果</p>',
+				'<p><a href="https://weibo.com/10503/QrDcN49nA">26-2-13 13:41</a></p>',
+				'<p><img src="https://wx2.sinaimg.cn/mw690/00002907gy1i3ujuvyz4zj20u00u0q8p.jpg" /></p>',
+			].join(''),
+			document as unknown as Document,
+			'https://weibo.com/10503/QrENs9Cxp'
+		);
+
+		expect(result).toContain('如果不理解最近技术文章说的 agent loop 是什么效果');
+		expect(result).not.toContain('公开');
+		expect(result).not.toContain('26-2-13 13:41');
+		expect(result).not.toContain('00002907gy1i3ujuvyz4zj20u00u0q8p.jpg');
+	});
+
 	test('replaces quoted tweet content with a placeholder linking back to the original x post', () => {
 		const { document } = parseHTML(`
 			<html>

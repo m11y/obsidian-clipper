@@ -7,9 +7,7 @@ export function enhanceWeiboContentHtml(
 		return contentHtml;
 	}
 
-	const sanitizedContentHtml = isTwitterStatusUrl(pageUrl)
-		? stripTwitterQuotedContent(contentHtml, pageUrl)
-		: contentHtml;
+	const sanitizedContentHtml = sanitizeContentHtml(contentHtml, document, pageUrl);
 	const existingUrls = extractImageUrlsFromHtml(sanitizedContentHtml, pageUrl);
 	const sourceUrls = isWeiboUrl(pageUrl)
 		? extractWeiboImageUrls(document, pageUrl)
@@ -35,6 +33,18 @@ export function getDefuddleOptions(pageUrl: string): { url: string; includeRepli
 		: { url: pageUrl };
 }
 
+function sanitizeContentHtml(contentHtml: string, document: Document, pageUrl: string): string {
+	if (isTwitterStatusUrl(pageUrl)) {
+		return stripTwitterQuotedContent(contentHtml, pageUrl);
+	}
+
+	if (isWeiboUrl(pageUrl)) {
+		return stripWeiboBoilerplate(contentHtml, document, pageUrl);
+	}
+
+	return contentHtml;
+}
+
 function extractWeiboImageUrls(document: Document, pageUrl: string): string[] {
 	const domUrls = extractWeiboImageUrlsFromDom(document, pageUrl);
 	if (domUrls.length > 0) {
@@ -58,10 +68,15 @@ function extractTwitterImageUrls(document: Document, pageUrl: string): string[] 
 }
 
 function extractWeiboImageUrlsFromDom(document: Document, pageUrl: string): string[] {
+	const boundary = findWeiboRepostBoundaryElement(document, pageUrl);
 	const images = Array.from(document.querySelectorAll('img'));
 	const urls: string[] = [];
 
 	for (const image of images) {
+		if (boundary && isAtOrAfterBoundary(image, boundary)) {
+			continue;
+		}
+
 		const candidates = [
 			(image as HTMLImageElement).currentSrc,
 			image.getAttribute('src') || '',
@@ -78,6 +93,10 @@ function extractWeiboImageUrlsFromDom(document: Document, pageUrl: string): stri
 
 	const imageLinks = Array.from(document.querySelectorAll('a[href]'));
 	for (const link of imageLinks) {
+		if (boundary && isAtOrAfterBoundary(link, boundary)) {
+			continue;
+		}
+
 		const href = normalizeUrl(link.getAttribute('href') || '', pageUrl);
 		if (href && isLikelyWeiboContentImageLink(href, link)) {
 			urls.push(href);
@@ -175,6 +194,12 @@ function extractImageUrlsFromHtml(contentHtml: string, pageUrl: string): Set<str
 	for (const match of contentHtml.matchAll(/<img[^>]+src=["']([^"']+)/gi)) {
 		const normalized = normalizeUrl(match[1], pageUrl);
 		if (normalized) {
+			urls.add(normalized);
+		}
+	}
+	for (const match of contentHtml.matchAll(/<a[^>]+href=["']([^"']+)/gi)) {
+		const normalized = normalizeUrl(match[1], pageUrl);
+		if (normalized && isDirectImageUrl(normalized)) {
 			urls.add(normalized);
 		}
 	}
@@ -339,6 +364,96 @@ function isTwitterStatusUrl(url: string): boolean {
 	}
 }
 
+const GENERIC_WEIBO_CONTENT_LINES = new Set([
+	'公开',
+	'仅自己可见',
+	'好友圈',
+	'粉丝可见',
+	'置顶',
+	'置顶微博',
+	'已编辑',
+]);
+
+function stripWeiboBoilerplate(contentHtml: string, document: Document, pageUrl: string): string {
+	const container = document.createElement('div');
+	container.innerHTML = contentHtml;
+
+	removeGenericWeiboBlocks(container);
+	trimWeiboRepostTail(container, pageUrl);
+
+	return container.innerHTML
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+}
+
+function removeGenericWeiboBlocks(container: HTMLElement): void {
+	for (const child of Array.from(container.children)) {
+		if (!isDisposableWeiboTextBlock(child)) {
+			continue;
+		}
+
+		const text = normalizeWhitespace(child.textContent || '');
+		if (GENERIC_WEIBO_CONTENT_LINES.has(text)) {
+			child.remove();
+		}
+	}
+}
+
+function trimWeiboRepostTail(container: HTMLElement, pageUrl: string): void {
+	const children = Array.from(container.children);
+	const boundaryIndex = children.findIndex(child => isWeiboRepostBoundaryBlock(child, pageUrl));
+	if (boundaryIndex < 0) {
+		return;
+	}
+
+	for (const child of children.slice(boundaryIndex)) {
+		child.remove();
+	}
+}
+
+function isDisposableWeiboTextBlock(element: Element): boolean {
+	return !element.querySelector('img, video, audio, iframe');
+}
+
+function isWeiboRepostBoundaryBlock(element: Element, pageUrl: string): boolean {
+	if (!isDisposableWeiboTextBlock(element)) {
+		return false;
+	}
+
+	const links = Array.from(element.querySelectorAll('a[href]'));
+	if (links.length !== 1) {
+		return false;
+	}
+
+	const link = links[0];
+	const href = normalizeUrl(link.getAttribute('href') || '', pageUrl);
+	const text = normalizeWhitespace(element.textContent || '');
+	if (!href || !text || text !== normalizeWhitespace(link.textContent || '')) {
+		return false;
+	}
+
+	return isWeiboUrl(href) && /^\d{2,4}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}$/.test(text);
+}
+
+function findWeiboRepostBoundaryElement(root: ParentNode, pageUrl: string): Element | null {
+	for (const element of Array.from(root.querySelectorAll('p, div, li, blockquote'))) {
+		if (isWeiboRepostBoundaryBlock(element, pageUrl)) {
+			return element;
+		}
+	}
+
+	return null;
+}
+
+function isAtOrAfterBoundary(node: Node, boundary: Element): boolean {
+	if (node === boundary || boundary.contains(node)) {
+		return true;
+	}
+
+	const following = boundary.ownerDocument?.defaultView?.Node?.DOCUMENT_POSITION_FOLLOWING ?? 4;
+	return (boundary.compareDocumentPosition(node) & following) !== 0;
+}
+
 function stripTwitterQuotedContent(contentHtml: string, pageUrl: string): string {
 	if (!contentHtml.includes('quoted-tweet')) {
 		return contentHtml;
@@ -384,6 +499,18 @@ function extractTwitterQuotedContentLabel(quotedHtml: string): string {
 		}
 		return line.length >= 8;
 	}) || '';
+}
+
+function isDirectImageUrl(url: string): boolean {
+	try {
+		return /\.(jpg|jpeg|png|gif|webp)(?:[?#].*)?$/i.test(new URL(url).pathname);
+	} catch {
+		return false;
+	}
+}
+
+function normalizeWhitespace(value: string): string {
+	return value.replace(/\s+/g, ' ').trim();
 }
 
 function escapeHtml(value: string): string {

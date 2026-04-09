@@ -122,7 +122,7 @@ module.exports = class WeiboLocalAssetsBridgePlugin extends Plugin {
 			savedAssets.push(assetPath);
 		}
 
-		const rewrittenContent = rewriteMarkdownImageLinks(payload.fileContent || '', replacements);
+		const rewrittenContent = rewriteMarkdownAssetLinks(payload.fileContent || '', replacements);
 		await this.writeNote(notePath, rewrittenContent, payload.behavior || 'create');
 		return { notePath, assets: savedAssets };
 	}
@@ -179,12 +179,20 @@ module.exports = class WeiboLocalAssetsBridgePlugin extends Plugin {
 	}
 };
 
-function rewriteMarkdownImageLinks(markdown, replacements) {
+function rewriteMarkdownAssetLinks(markdown, replacements) {
 	let output = markdown;
 	for (const [url, assetPath] of replacements.entries()) {
 		const escapedUrl = escapeRegExp(url);
 		output = output.replace(new RegExp(`!\\[[^\\]]*\\]\\(${escapedUrl}\\)`, 'g'), `![[${assetPath}]]`);
 		output = output.replace(new RegExp(`<img[^>]+src=["']${escapedUrl}["'][^>]*>`, 'gi'), `![[${assetPath}]]`);
+		output = output.replace(
+			new RegExp(`\\[([^\\]]*)\\]\\(${escapedUrl}\\)`, 'g'),
+			(_, label) => `[[${assetPath}|${sanitizeWikiLinkAlias(label)}]]`
+		);
+		output = output.replace(
+			new RegExp(`<a[^>]+href=["']${escapedUrl}["'][^>]*>([\\s\\S]*?)<\\/a>`, 'gi'),
+			(_, label) => `[[${assetPath}|${sanitizeWikiLinkAlias(stripHtml(label))}]]`
+		);
 	}
 	return output;
 }
@@ -248,6 +256,15 @@ function inferExtension(filename, mimeType) {
 
 function sanitizeSegment(value) {
 	return value.replace(/[\\/:*?"<>|#^\[\]]/g, '-').trim() || 'clip';
+}
+
+function sanitizeWikiLinkAlias(value) {
+	const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+	return (normalized || '查看图片').replace(/[|\]]/g, ' ');
+}
+
+function stripHtml(value) {
+	return String(value || '').replace(/<[^>]+>/g, ' ');
 }
 
 function escapeRegExp(value) {
