@@ -114,10 +114,12 @@ module.exports = class WeiboLocalAssetsBridgePlugin extends Plugin {
 
 			const assetBaseName = inferAssetBaseName(asset.filename, index + 1);
 			const extension = inferExtension(asset.filename, asset.mimeType);
-			const assetPath = await this.getAvailablePath(`${assetDir}/${assetBaseName}.${extension}`);
-			const buffer = Buffer.from(asset.base64, 'base64');
-			const binary = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-			await this.app.vault.adapter.writeBinary(assetPath, binary);
+			const assetPath = normalizePath(`${assetDir}/${assetBaseName}.${extension}`);
+			if (!(await this.app.vault.adapter.exists(assetPath))) {
+				const buffer = Buffer.from(asset.base64, 'base64');
+				const binary = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+				await this.app.vault.adapter.writeBinary(assetPath, binary);
+			}
 			replacements.set(asset.url, assetPath);
 			savedAssets.push(assetPath);
 		}
@@ -164,19 +166,6 @@ module.exports = class WeiboLocalAssetsBridgePlugin extends Plugin {
 		}
 	}
 
-	async getAvailablePath(basePath) {
-		if (!(await this.app.vault.adapter.exists(basePath))) {
-			return basePath;
-		}
-
-		const extension = path.posix.extname(basePath);
-		const stem = basePath.slice(0, -extension.length);
-		let counter = 2;
-		while (await this.app.vault.adapter.exists(`${stem}-${counter}${extension}`)) {
-			counter += 1;
-		}
-		return `${stem}-${counter}${extension}`;
-	}
 };
 
 function rewriteMarkdownAssetLinks(markdown, replacements) {

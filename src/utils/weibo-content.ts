@@ -387,14 +387,17 @@ function stripWeiboBoilerplate(contentHtml: string, document: Document, pageUrl:
 }
 
 function removeGenericWeiboBlocks(container: HTMLElement): void {
-	for (const child of Array.from(container.children)) {
-		if (!isDisposableWeiboTextBlock(child)) {
+	const candidates = Array.from(container.querySelectorAll('p, div, li, blockquote, span'))
+		.sort((a, b) => b.querySelectorAll('*').length - a.querySelectorAll('*').length);
+
+	for (const candidate of candidates) {
+		if (!isDisposableWeiboTextBlock(candidate)) {
 			continue;
 		}
 
-		const text = normalizeWhitespace(child.textContent || '');
+		const text = normalizeWhitespace(candidate.textContent || '');
 		if (GENERIC_WEIBO_CONTENT_LINES.has(text)) {
-			child.remove();
+			candidate.remove();
 		}
 	}
 }

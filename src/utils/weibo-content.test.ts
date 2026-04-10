@@ -186,6 +186,34 @@ describe('enhanceWeiboContentHtml', () => {
 		expect(result).not.toContain('00002907gy1i3ujuvyz4zj20u00u0q8p.jpg');
 	});
 
+	test('removes nested weibo visibility labels inside wrapper containers', () => {
+		const { document } = parseHTML(`
+			<html>
+				<body>
+					<article>
+						<div class="Feed_body_3R0rO">
+							<div class="Feed_detail_3-6Qm">
+								<span>公开</span>
+							</div>
+							<div class="Feed_detail_3-6Qm">
+								<p>正文第一段</p>
+							</div>
+						</div>
+					</article>
+				</body>
+			</html>
+		`);
+
+		const result = enhanceWeiboContentHtml(
+			'<div><div><span>公开</span></div><div><p>正文第一段</p></div></div>',
+			document as unknown as Document,
+			'https://weibo.com/10503/QrENs9Cxp'
+		);
+
+		expect(result).toContain('正文第一段');
+		expect(result).not.toContain('公开');
+	});
+
 	test('replaces quoted tweet content with a placeholder linking back to the original x post', () => {
 		const { document } = parseHTML(`
 			<html>
